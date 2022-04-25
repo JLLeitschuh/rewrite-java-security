@@ -17,7 +17,6 @@
 
 package org.openrewrite.java.security
 
-import org.junit.jupiter.api.Disabled
 import org.junit.jupiter.api.Test
 import org.openrewrite.Recipe
 import org.openrewrite.java.JavaRecipeTest
@@ -31,7 +30,7 @@ class UseFilesCreateTempDirectoryTest : JavaRecipeTest {
         before = """
             import java.io.File;
             import java.io.IOException;
-            
+
             class A {
                 void b() throws IOException {
                     File tempDir;
@@ -46,7 +45,7 @@ class UseFilesCreateTempDirectoryTest : JavaRecipeTest {
             import java.io.File;
             import java.io.IOException;
             import java.nio.file.Files;
-            
+
             class A {
                 void b() throws IOException {
                     File tempDir;
@@ -63,7 +62,7 @@ class UseFilesCreateTempDirectoryTest : JavaRecipeTest {
             import java.io.File;
             import java.io.IOException;
             import java.nio.file.Files;
-            
+
             class A {
                 File testData = Files.createTempDirectory("").toFile();
                 void b() throws IOException {
@@ -77,7 +76,7 @@ class UseFilesCreateTempDirectoryTest : JavaRecipeTest {
             import java.io.File;
             import java.io.IOException;
             import java.nio.file.Files;
-            
+
             class A {
                 File testData = Files.createTempDirectory("").toFile();
                 void b() throws IOException {
@@ -92,7 +91,7 @@ class UseFilesCreateTempDirectoryTest : JavaRecipeTest {
         before = """
             import java.io.File;
             import java.io.IOException;
-            
+
             class A {
                 void b() throws IOException {
                     File tempDir = File.createTempFile("abc", "def");
@@ -110,7 +109,7 @@ class UseFilesCreateTempDirectoryTest : JavaRecipeTest {
             import java.io.File;
             import java.io.IOException;
             import java.nio.file.Files;
-            
+
             class A {
                 void b() throws IOException {
                     File tempDir = Files.createTempDirectory("abc" + "def").toFile();
@@ -136,7 +135,7 @@ class UseFilesCreateTempDirectoryTest : JavaRecipeTest {
             package abc;
             import java.io.File;
             import java.io.IOException;
-            
+
             class A {
                 void b() throws IOException {
                     C.FILE = File.createTempFile("cfile", "txt");
@@ -151,7 +150,7 @@ class UseFilesCreateTempDirectoryTest : JavaRecipeTest {
             import java.io.File;
             import java.io.IOException;
             import java.nio.file.Files;
-            
+
             class A {
                 void b() throws IOException {
                     C.FILE = File.createTempFile("cfile", "txt");
@@ -167,7 +166,7 @@ class UseFilesCreateTempDirectoryTest : JavaRecipeTest {
         before = """
             import java.io.File;
             import java.io.IOException;
-            
+
             class T {
                 void vulnerableFileCreateTempFileMkdirTainted() throws IOException {
                     File tempDirChild = new File(System.getProperty("java.io.tmpdir"), "/child");
@@ -182,7 +181,7 @@ class UseFilesCreateTempDirectoryTest : JavaRecipeTest {
         before = """
             import java.io.File;
             import java.io.IOException;
-            
+
             class T {
                 void vulnerableFileCreateTempFileMkdirTainted() {
                     File tempDirChild = new File(System.getProperty("java.io.tmpdir"), "/child");
@@ -197,7 +196,7 @@ class UseFilesCreateTempDirectoryTest : JavaRecipeTest {
         before = """
             import java.io.File;
             import java.io.IOException;
-            
+
             class T {
                 public void doSomething() throws IOException {
                     File tmpDir = new File("/some/dumb/thing");
@@ -218,7 +217,7 @@ class UseFilesCreateTempDirectoryTest : JavaRecipeTest {
             import java.io.File;
             import java.io.IOException;
             import java.nio.file.Files;
-            
+
             class T {
                 public void doSomething() throws IOException {
                     File tmpDir = new File("/some/dumb/thing");
@@ -235,18 +234,17 @@ class UseFilesCreateTempDirectoryTest : JavaRecipeTest {
         """
     )
 
-    @Disabled
     @Test
     fun `delete wrapped in an if block`() = assertChanged(
         before = """
             import java.io.File;
             import java.io.IOException;
             import java.nio.file.Files;
-            
+
             class A {
                 File testData = Files.createTempDirectory("").toFile();
                 void b() throws IOException {
-                    File tmpDir = File.createTempFile("test", "dir");
+                    File tmpDir = File.createTempFile("test", "dir", testData);
                     if (!tmpDir.delete()) {
                         System.out.println("Failed to delete directory!");
                     }
@@ -258,11 +256,52 @@ class UseFilesCreateTempDirectoryTest : JavaRecipeTest {
             import java.io.File;
             import java.io.IOException;
             import java.nio.file.Files;
-            
+
             class A {
                 File testData = Files.createTempDirectory("").toFile();
                 void b() throws IOException {
                     File tmpDir = Files.createTempDirectory(testData.toPath(), "test" + "dir").toFile();
+                }
+            }
+        """
+    )
+
+    @Test
+    fun `boolean operator on race calls`() = assertChanged(
+        before = """
+            import java.io.File;
+            import java.io.IOException;
+
+            class A {
+                File b() throws IOException {
+                    boolean success = true;
+                    File temp = File.createTempFile("test", "directory");
+                    success &= temp.delete();
+                    success &= temp.mkdir();
+                    if (success) {
+                        return temp;
+                    } else {
+                        throw new RuntimeException("Failed to create directory");
+                    }
+                }
+            }
+        """,
+        after = """
+            import java.io.File;
+            import java.io.IOException;
+            import java.nio.file.Files;
+
+            class A {
+                File b() throws IOException {
+                    boolean success = true;
+                    File temp = Files.createTempDirectory("test" + "directory").toFile();
+                    success &= true;
+                    success &= true;
+                    if (success) {
+                        return temp;
+                    } else {
+                        throw new RuntimeException("Failed to create directory");
+                    }
                 }
             }
         """
