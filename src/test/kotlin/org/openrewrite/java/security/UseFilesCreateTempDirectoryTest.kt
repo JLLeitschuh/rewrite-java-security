@@ -326,8 +326,6 @@ class UseFilesCreateTempDirectoryTest : JavaRecipeTest {
                 File b() throws IOException {
                     boolean success = true;
                     File temp = Files.createTempDirectory("test" + "directory").toFile();
-                    success &= true;
-                    success &= true;
                     if (success) {
                         return temp;
                     } else {

@@ -22,18 +22,15 @@ import org.openrewrite.Tree;
 import org.openrewrite.internal.ListUtils;
 import org.openrewrite.internal.lang.Nullable;
 import org.openrewrite.java.*;
+import org.openrewrite.java.cleanup.SimplifyCompoundVisitor;
 import org.openrewrite.java.cleanup.SimplifyConstantIfBranchExecution;
 import org.openrewrite.java.marker.JavaVersion;
-import org.openrewrite.java.search.FindReferencedTypes;
 import org.openrewrite.java.search.UsesMethod;
 import org.openrewrite.java.tree.*;
 import org.openrewrite.marker.Markers;
 
 import java.time.Duration;
 import java.util.*;
-
-import static java.util.Collections.emptyList;
-import static org.openrewrite.Tree.randomId;
 
 public class UseFilesCreateTempDirectory extends Recipe {
 
@@ -191,8 +188,11 @@ public class UseFilesCreateTempDirectory extends Recipe {
                         bl = deleteOrReplaceStatement(bl, delete, trueLiteral(delete.getPrefix()), executionContext);
                         Statement mkdir = stmtMap.get("mkdir");
                         bl = deleteOrReplaceStatement(bl, mkdir, trueLiteral(mkdir.getPrefix()), executionContext);
-                        // TODO: Only visit this particular block, not the entire file.
-                        doAfterVisit(new SimplifyConstantIfBranchExecution());
+                        bl = (J.Block) new SimplifyConstantIfBranchExecution()
+                                .getVisitor()
+                                .visitNonNull(bl, executionContext, getCursor().getParentOrThrow());
+                        bl = (J.Block) new SimplifyCompoundVisitor<>()
+                                .visitNonNull(bl, executionContext, getCursor().getParentOrThrow());
                     }
                 }
             }
