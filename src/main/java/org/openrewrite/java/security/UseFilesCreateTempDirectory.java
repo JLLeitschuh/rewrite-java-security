@@ -113,7 +113,7 @@ public class UseFilesCreateTempDirectory extends Recipe {
 
         @AllArgsConstructor
         private static class TempDirHijackingChainFinderVisitor extends JavaIsoVisitor<Map<String, Statement>> {
-            private J createFileStatement;
+            private final J createFileStatement;
 
             @Override
             public Statement visitStatement(Statement stmt, Map<String, Statement> stmtMap) {
