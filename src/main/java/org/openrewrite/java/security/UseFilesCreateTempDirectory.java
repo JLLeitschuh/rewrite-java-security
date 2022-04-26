@@ -137,26 +137,35 @@ public class UseFilesCreateTempDirectory extends Recipe {
             }
         }
 
-        private static class DeleteOrElseReplaceStatement<P> extends DeleteStatementNonIso<P> {
+        private static class ReplaceStatement<P> extends JavaVisitor<P> {
             private final Statement statement;
             private final Expression replacement;
 
-            public DeleteOrElseReplaceStatement(Statement statement, Expression replacement) {
-                super(statement);
+            public ReplaceStatement(Statement statement, Expression replacement) {
                 this.statement = statement;
                 this.replacement = replacement;
             }
 
             @Override
-            public Expression visitExpression(Expression expression, P p) {
+            public J visitExpression(Expression expression, P p) {
                 // The statement should only be replaced when removing would cause invalid code.
                 if (expression == statement &&
                         // If the direct parent of this expression is a `J.Block` then it should be removed by `DeleteStatementNonIso`.
                         !(getCursor().getParentOrThrow(2).getValue() instanceof J.Block)) {
                     return replacement;
                 }
-                return (Expression) super.visitExpression(expression, p);
+                return super.visitExpression(expression, p);
             }
+        }
+
+        private J.Block deleteOrReplaceStatement(J.Block bl, Statement stmt, Expression replacement, ExecutionContext executionContext) {
+            bl = (J.Block) new DeleteStatement<>(stmt)
+                    .visitNonNull(bl, executionContext, getCursor().getParentOrThrow());
+            bl = (J.Block) new ReplaceStatement<>(
+                    stmt,
+                    replacement
+            ).visitNonNull(bl, executionContext, getCursor().getParentOrThrow());
+            return bl;
         }
 
         @Override
@@ -179,15 +188,9 @@ public class UseFilesCreateTempDirectory extends Recipe {
                         }));
                         maybeAddImport("java.nio.file.Files");
                         Statement delete = stmtMap.get("delete");
-                        bl = (J.Block) new DeleteOrElseReplaceStatement<>(
-                                delete,
-                                trueLiteral(delete.getPrefix())
-                        ).visitNonNull(bl, executionContext, getCursor().getParentOrThrow());
+                        bl = deleteOrReplaceStatement(bl, delete, trueLiteral(delete.getPrefix()), executionContext);
                         Statement mkdir = stmtMap.get("mkdir");
-                        bl = (J.Block) new DeleteOrElseReplaceStatement<>(
-                                mkdir,
-                                trueLiteral(mkdir.getPrefix())
-                        ).visitNonNull(bl, executionContext, getCursor().getParentOrThrow());
+                        bl = deleteOrReplaceStatement(bl, mkdir, trueLiteral(mkdir.getPrefix()), executionContext);
                         // TODO: Only visit this particular block, not the entire file.
                         doAfterVisit(new SimplifyConstantIfBranchExecution());
                     }
@@ -279,81 +282,5 @@ public class UseFilesCreateTempDirectory extends Recipe {
             }
             return m;
         }
-    }
-}
-
-/**
- * Deletes standalone statements. Does not include deletion of control statements present in for loops.
- */
-class DeleteStatementNonIso<P> extends JavaVisitor<P> {
-    private final Statement statement;
-
-    public DeleteStatementNonIso(Statement statement) {
-        this.statement = statement;
-    }
-
-    @Override
-    public J.If visitIf(J.If iff, P p) {
-        J.If i = (J.If) super.visitIf(iff, p);
-        if (statement.isScope(i.getThenPart())) {
-            i = i.withThenPart(emptyBlock());
-        } else if (i.getElsePart() != null && statement.isScope(i.getElsePart())) {
-            i = i.withElsePart(i.getElsePart().withBody(emptyBlock()));
-        }
-
-        return i;
-    }
-
-    @Override
-    public J.ForLoop visitForLoop(J.ForLoop forLoop, P p) {
-        return statement.isScope(forLoop.getBody()) ?
-                forLoop.withBody(emptyBlock()) :
-                (J.ForLoop) super.visitForLoop(forLoop, p);
-    }
-
-    @Override
-    public J.ForEachLoop visitForEachLoop(J.ForEachLoop forEachLoop, P p) {
-        return statement.isScope(forEachLoop.getBody()) ?
-                forEachLoop.withBody(emptyBlock()) :
-                (J.ForEachLoop) super.visitForEachLoop(forEachLoop, p);
-    }
-
-    @Override
-    public J.WhileLoop visitWhileLoop(J.WhileLoop whileLoop, P p) {
-        return statement.isScope(whileLoop.getBody()) ? whileLoop.withBody(emptyBlock()) :
-                (J.WhileLoop) super.visitWhileLoop(whileLoop, p);
-    }
-
-    @Override
-    public J.DoWhileLoop visitDoWhileLoop(J.DoWhileLoop doWhileLoop, P p) {
-        return statement.isScope(doWhileLoop.getBody()) ? doWhileLoop.withBody(emptyBlock()) :
-                (J.DoWhileLoop) super.visitDoWhileLoop(doWhileLoop, p);
-    }
-
-    @Override
-    public J.Block visitBlock(J.Block block, P p) {
-        J.Block b = (J.Block) super.visitBlock(block, p);
-        return b.withStatements(ListUtils.map(b.getStatements(), s ->
-                statement.isScope(s) ? null : s));
-    }
-
-    @Override
-    public J preVisit(J tree, P p) {
-        if (statement.isScope(tree)) {
-            for (JavaType.FullyQualified referenced : FindReferencedTypes.find(tree)) {
-                maybeRemoveImport(referenced);
-            }
-        }
-        return super.preVisit(tree, p);
-    }
-
-    private Statement emptyBlock() {
-        return new J.Block(randomId(),
-                Space.EMPTY,
-                Markers.EMPTY,
-                null,
-                emptyList(),
-                Space.EMPTY
-        );
     }
 }

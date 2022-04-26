@@ -267,6 +267,37 @@ class UseFilesCreateTempDirectoryTest : JavaRecipeTest {
     )
 
     @Test
+    fun `delete & mkdirs wrapped in an if block`() = assertChanged(
+        before = """
+            import java.io.File;
+            import java.io.IOException;
+            import java.nio.file.Files;
+
+            class A {
+                File testData = Files.createTempDirectory("").toFile();
+                void b() throws IOException {
+                    File tmpDir = File.createTempFile("test", "dir", testData);
+                    if (!tmpDir.delete() || !tmpDir.mkdir()) {
+                        throw new IOException("Failed to or create directory!");
+                    }
+                }
+            }
+        """,
+        after = """
+            import java.io.File;
+            import java.io.IOException;
+            import java.nio.file.Files;
+
+            class A {
+                File testData = Files.createTempDirectory("").toFile();
+                void b() throws IOException {
+                    File tmpDir = Files.createTempDirectory(testData.toPath(), "test" + "dir").toFile();
+                }
+            }
+        """
+    )
+
+    @Test
     fun `boolean operator on race calls`() = assertChanged(
         before = """
             import java.io.File;
