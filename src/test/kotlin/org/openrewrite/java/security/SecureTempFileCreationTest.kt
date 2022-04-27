@@ -16,10 +16,12 @@
 package org.openrewrite.java.security
 
 import org.junit.jupiter.api.Test
+import org.openrewrite.Issue
 import org.openrewrite.Recipe
 import org.openrewrite.java.JavaRecipeTest
 
 class SecureTempFileCreationTest : JavaRecipeTest {
+
 
     override val recipe: Recipe
         get() = SecureTempFileCreation()
@@ -93,4 +95,21 @@ class SecureTempFileCreationTest : JavaRecipeTest {
         """
     )
 
+    /**
+     * If the issue could be fixed by the [UseFilesCreateTempDirectory] recipe, then this recipe should not be run.
+     */
+    @Test
+    @Issue("https://github.com/openrewrite/rewrite-java-security/issues/9")
+    fun `do not fix temporary directory hijacking`() = assertUnchanged(
+        before = """
+            class A {
+                void b() {
+                    File tempDir = File.createTempFile("abc", "def");
+                    tempDir.delete();
+                    tempDir.mkdir();
+                    System.out.println(tempDir.getAbsolutePath());
+                }
+            }
+        """
+    )
 }

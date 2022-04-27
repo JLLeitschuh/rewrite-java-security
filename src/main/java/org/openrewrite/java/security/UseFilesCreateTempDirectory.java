@@ -16,6 +16,7 @@
 package org.openrewrite.java.security;
 
 import lombok.AllArgsConstructor;
+import lombok.NoArgsConstructor;
 import org.openrewrite.ExecutionContext;
 import org.openrewrite.Recipe;
 import org.openrewrite.Tree;
@@ -29,6 +30,7 @@ import org.openrewrite.java.search.UsesMethod;
 import org.openrewrite.java.tree.*;
 import org.openrewrite.marker.Markers;
 
+import java.io.File;
 import java.time.Duration;
 import java.util.*;
 
@@ -70,7 +72,7 @@ public class UseFilesCreateTempDirectory extends Recipe {
     }
 
     @Override
-    protected UsesFilesCreateTempDirVisitor getVisitor() {
+    public JavaIsoVisitor<ExecutionContext> getVisitor() {
         return new UsesFilesCreateTempDirVisitor();
     }
 
@@ -111,23 +113,103 @@ public class UseFilesCreateTempDirectory extends Recipe {
             return mi;
         }
 
+        @NoArgsConstructor
+        private static class TempDirHijackingChainStateMachine {
+            private enum State {
+                /**
+                 * The initial state, no calls have been observed.
+                 */
+                INIT,
+                /**
+                 * A call to {@link File#createTempFile} has been observed.
+                 */
+                CREATE,
+                /**
+                 * A call to {@link File#delete()} has been observed.
+                 */
+                DELETE,
+                /**
+                 * A call to {@link File#mkdir()} or {@link File#mkdirs()} has been observed.
+                 */
+                MKDIR
+            }
+            private State state = State.INIT;
+            private final Map<String, Statement> stmtMap = new HashMap<>(4);
+
+            void stateCreateStatement(Statement insecureCreateStatement, Statement secureCreateStatement) {
+                if (state.equals(State.INIT)) {
+                    stmtMap.put("create", insecureCreateStatement);
+                    stmtMap.put("secureCreate", secureCreateStatement);
+                    state = State.CREATE;
+                }
+            }
+
+            void stateDeleteStatement(Statement deleteStatement) {
+                if (state.equals(State.CREATE)) {
+                    stmtMap.put("delete", deleteStatement);
+                    state = State.DELETE;
+                }
+            }
+
+            void stateMkdirStatement(Statement mkdirStatement) {
+                if (state.equals(State.DELETE)) {
+                    stmtMap.put("mkdir", mkdirStatement);
+                    state = State.MKDIR;
+                }
+            }
+
+            /**
+             * The variable that we're tracking through the state machine has been reassigned to a different value.
+             */
+            public void stateVariableReassigned() {
+                if (!state.equals(State.MKDIR)) {
+                    state = State.INIT;
+                }
+            }
+
+            boolean isStateMachineSatisfied() {
+                return state.equals(State.MKDIR);
+            }
+
+            Statement getCreateStatement() {
+                return stmtMap.get("create");
+            }
+
+            Statement getSecureCreateStatement() {
+                return stmtMap.get("secureCreate");
+            }
+
+            Statement getDeleteStatement() {
+                return stmtMap.get("delete");
+            }
+
+            Statement getMkdirStatement() {
+                return stmtMap.get("mkdir");
+            }
+        }
+
         @AllArgsConstructor
-        private static class TempDirHijackingChainFinderVisitor extends JavaIsoVisitor<Map<String, Statement>> {
+        private static class TempDirHijackingChainFinderVisitor extends JavaIsoVisitor<TempDirHijackingChainStateMachine> {
             private final J createFileStatement;
 
             @Override
-            public Statement visitStatement(Statement stmt, Map<String, Statement> stmtMap) {
-                Statement s = super.visitStatement(stmt, stmtMap);
+            public Statement visitStatement(Statement stmt, TempDirHijackingChainStateMachine stateMachine) {
+                Statement s = super.visitStatement(stmt, stateMachine);
                 J.Identifier createFileIdentifier = getIdent(createFileStatement);
                 if (createFileIdentifier != null) {
                     if (isMatchingCreateFileStatement(createFileStatement, stmt)) {
-                        stmtMap.put("create", stmt);
-                        stmtMap.put("secureCreate", (Statement) new SecureTempDirectoryCreation<>().visitNonNull(stmt, stmtMap, getCursor().getParentOrThrow()));
+                        stateMachine.stateCreateStatement(
+                                stmt,
+                                (Statement) new SecureTempDirectoryCreation<>()
+                                        .visitNonNull(stmt, stateMachine, getCursor().getParentOrThrow())
+                        );
                     } else if (isMethodForIdent(createFileIdentifier, DELETE_MATCHER, stmt)) {
-                        stmtMap.put("delete", stmt);
+                        stateMachine.stateDeleteStatement(stmt);
                     } else if (isMethodForIdent(createFileIdentifier, MKDIR_MATCHER, stmt)
                             || isMethodForIdent(createFileIdentifier, MKDIRS_MATCHER, stmt)) {
-                        stmtMap.put("mkdir", stmt);
+                        stateMachine.stateMkdirStatement(stmt);
+                    } else if (isAssignmentForIdent(createFileIdentifier, stmt)) {
+                        stateMachine.stateVariableReassigned();
                     }
                 }
                 return s;
@@ -171,22 +253,23 @@ public class UseFilesCreateTempDirectory extends Recipe {
             List<J> createFileStatements = getCursor().pollMessage("CREATE_FILE_STATEMENT");
             if (createFileStatements != null) {
                 for (J createFileStatement : createFileStatements) {
-                    final Map<String, Statement> stmtMap = new HashMap<>();
+                    final TempDirHijackingChainStateMachine stateMachine =
+                            new TempDirHijackingChainStateMachine();
 
                     new TempDirHijackingChainFinderVisitor(createFileStatement)
-                            .visitNonNull(bl, stmtMap, getCursor().getParentOrThrow());
+                            .visitNonNull(bl, stateMachine, getCursor().getParentOrThrow());
 
-                    if (stmtMap.size() == 4) {
+                    if (stateMachine.isStateMachineSatisfied()) {
                         bl = bl.withStatements(ListUtils.map(bl.getStatements(), stmt -> {
-                            if (stmt == stmtMap.get("create")) {
-                                return stmtMap.get("secureCreate");
+                            if (stmt == stateMachine.getCreateStatement()) {
+                                return stateMachine.getSecureCreateStatement();
                             }
                             return stmt;
                         }));
                         maybeAddImport("java.nio.file.Files");
-                        Statement delete = stmtMap.get("delete");
+                        Statement delete = stateMachine.getDeleteStatement();
                         bl = deleteOrReplaceStatement(bl, delete, trueLiteral(delete.getPrefix()), executionContext);
-                        Statement mkdir = stmtMap.get("mkdir");
+                        Statement mkdir = stateMachine.getMkdirStatement();
                         bl = deleteOrReplaceStatement(bl, mkdir, trueLiteral(mkdir.getPrefix()), executionContext);
                         bl = (J.Block) new SimplifyConstantIfBranchExecution()
                                 .getVisitor()
@@ -218,6 +301,19 @@ public class UseFilesCreateTempDirectory extends Recipe {
             } else if (createFileStatement instanceof J.VariableDeclarations.NamedVariable && statement instanceof J.VariableDeclarations) {
                 J.VariableDeclarations varDecls = (J.VariableDeclarations) statement;
                 return varDecls.getVariables().size() == 1 && varDecls.getVariables().get(0).equals(createFileStatement);
+            }
+            return false;
+        }
+
+        private static boolean isAssignmentForIdent(J.Identifier ident, Statement statement) {
+            if (statement instanceof J.Assignment) {
+                J.Assignment assignment = (J.Assignment) statement;
+                Expression variable = assignment.getVariable();
+                if (variable instanceof J.Identifier) {
+                    J.Identifier variableIdent = (J.Identifier) variable;
+                    return ident.getSimpleName().equals(variableIdent.getSimpleName()) &&
+                            TypeUtils.isOfClassType(variableIdent.getType(), "java.io.File");
+                }
             }
             return false;
         }

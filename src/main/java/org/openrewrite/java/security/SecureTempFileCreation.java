@@ -61,6 +61,20 @@ public class SecureTempFileCreation extends Recipe {
                     .build();
 
             @Override
+            public J.Block visitBlock(J.Block block, ExecutionContext executionContext) {
+                J.Block createTempDirectoryFix = (J.Block) new UseFilesCreateTempDirectory()
+                        .getVisitor()
+                        .visitNonNull(block, executionContext, getCursor());
+                if (createTempDirectoryFix != block) {
+                    // If the issue could be fixed by the UseFilesCreateTempDirectory's visitor
+                    // then this visitor should not be applied.
+                    return block;
+                } else {
+                    return super.visitBlock(block, executionContext);
+                }
+            }
+
+            @Override
             public J.MethodInvocation visitMethodInvocation(J.MethodInvocation method, ExecutionContext executionContext) {
                 J.MethodInvocation m = method;
                 if (matcher.matches(m)) {

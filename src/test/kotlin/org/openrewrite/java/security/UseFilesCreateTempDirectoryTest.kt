@@ -335,4 +335,67 @@ class UseFilesCreateTempDirectoryTest : JavaRecipeTest {
             }
         """
     )
+
+    @Test
+    fun `multiple calls to delete`() = assertChanged(
+        before = """
+            import java.io.File;
+            import java.io.FileWriter;
+            import java.io.IOException;
+
+            class A {
+                void b() throws IOException {
+                    boolean success = true;
+                    File temp = File.createTempFile("test", "directory");
+                    temp.delete();
+                    temp.mkdir();
+                    File textFile = new File(temp, "test.txt");
+                    try (FileWriter writer = new FileWriter(textFile)) {
+                        writer.write("Hello World!");
+                    } finally {
+                        textFile.delete();
+                        temp.delete();
+                    }
+                }
+            }
+        """,
+        after = """
+            import java.io.File;
+            import java.io.FileWriter;
+            import java.io.IOException;
+            import java.nio.file.Files;
+
+            class A {
+                void b() throws IOException {
+                    boolean success = true;
+                    File temp = Files.createTempDirectory("test" + "directory").toFile();
+                    File textFile = new File(temp, "test.txt");
+                    try (FileWriter writer = new FileWriter(textFile)) {
+                        writer.write("Hello World!");
+                    } finally {
+                        textFile.delete();
+                        temp.delete();
+                    }
+                }
+            }
+        """
+    )
+
+    @Test
+    fun `strange chain that calls through new File`() = assertUnchanged(
+        before = """
+            import java.io.File;
+            import java.io.FileWriter;
+            import java.io.IOException;
+
+            class A {
+                void createWorkingDir() throws IOException {
+                    File temp = File.createTempFile("temp", Long.toString(System.nanoTime()));
+                    temp.delete();
+                    temp = new File(temp.getAbsolutePath() + ".d");
+                    temp.mkdir();
+                }
+            }
+        """
+    )
 }
