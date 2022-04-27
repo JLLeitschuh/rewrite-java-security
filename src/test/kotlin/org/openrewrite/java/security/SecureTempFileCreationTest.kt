@@ -21,7 +21,6 @@ import org.openrewrite.java.JavaRecipeTest
 
 class SecureTempFileCreationTest : JavaRecipeTest {
 
-
     override val recipe: Recipe
         get() = SecureTempFileCreation()
 
@@ -79,7 +78,7 @@ class SecureTempFileCreationTest : JavaRecipeTest {
     fun threeArgWithNullPath() =  assertChanged(
         before = """
             import java.io.File;
-            
+
             class T {
                 File temp = File.createTempFile("random", "file", null);
             }
@@ -87,7 +86,7 @@ class SecureTempFileCreationTest : JavaRecipeTest {
         after = """
             import java.io.File;
             import java.nio.file.Files;
-            
+
             class T {
                 File temp = Files.createTempFile("random", "file").toFile();
             }
