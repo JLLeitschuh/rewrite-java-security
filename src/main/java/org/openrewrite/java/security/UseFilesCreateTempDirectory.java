@@ -172,18 +172,22 @@ public class UseFilesCreateTempDirectory extends Recipe {
             }
 
             Statement getCreateStatement() {
+                assert isStateMachineSatisfied() : "State machine is not in correct 'final' state.";
                 return stmtMap.get("create");
             }
 
             Statement getSecureCreateStatement() {
+                assert isStateMachineSatisfied() : "State machine is not in correct 'final' state.";
                 return stmtMap.get("secureCreate");
             }
 
             Statement getDeleteStatement() {
+                assert isStateMachineSatisfied() : "State machine is not in correct 'final' state.";
                 return stmtMap.get("delete");
             }
 
             Statement getMkdirStatement() {
+                assert isStateMachineSatisfied() : "State machine is not in correct 'final' state.";
                 return stmtMap.get("mkdir");
             }
         }

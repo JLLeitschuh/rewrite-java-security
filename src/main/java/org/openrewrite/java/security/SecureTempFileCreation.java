@@ -66,6 +66,8 @@ public class SecureTempFileCreation extends Recipe {
                         .getVisitor()
                         .visitNonNull(block, executionContext, getCursor());
                 if (createTempDirectoryFix != block) {
+                    // If the issue could be fixed by the UseFilesCreateTempDirectory's visitor
+                    // then this visitor should not be applied.
                     return block;
                 } else {
                     return super.visitBlock(block, executionContext);
