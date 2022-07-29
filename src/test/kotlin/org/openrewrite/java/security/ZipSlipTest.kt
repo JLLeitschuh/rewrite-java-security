@@ -40,7 +40,7 @@ class ZipSlipTest : RewriteTest {
                 public void m1(ZipEntry entry, File dir) throws Exception {
                     String name = entry.getName();
                     File file = new File(dir, name);
-                    if (!file.toPath().normalize().startsWith(dir.toPath())) {
+                    if (!file.toPath().normalize().startsWith(dir.toPath().normalize())) {
                         throw new RuntimeException("Bad zip entry");
                     }
                     FileOutputStream os = new FileOutputStream(file); // ZipSlip
@@ -82,7 +82,7 @@ class ZipSlipTest : RewriteTest {
                 public void m1(ZipEntry entry, Path dir) throws Exception {
                     String name = entry.getName();
                     Path path = dir.resolve(name);
-                    if (!path.normalize().startsWith(dir)) {
+                    if (!path.normalize().startsWith(dir.normalize())) {
                         throw new RuntimeException("Bad zip entry");
                     }
                     OutputStream os = Files.newOutputStream(path);
@@ -121,7 +121,7 @@ class ZipSlipTest : RewriteTest {
                 public void m1(ZipEntry entry, Path dir) throws Exception {
                     String name = entry.getName();
                     final Path zipEntryPath = dir.resolve(name);
-                    if (!zipEntryPath.normalize().startsWith(dir)) {
+                    if (!zipEntryPath.normalize().startsWith(dir.normalize())) {
                         throw new RuntimeException("Bad zip entry");
                     }
                     OutputStream os = Files.newOutputStream(zipEntryPath);
@@ -158,7 +158,7 @@ class ZipSlipTest : RewriteTest {
                 public void m1(ZipEntry entry, File dir) throws Exception {
                     String name = entry.getName();
                     final File zipEntryFile = new File(dir, name);
-                    if (!zipEntryFile.toPath().normalize().startsWith(dir.toPath())) {
+                    if (!zipEntryFile.toPath().normalize().startsWith(dir.toPath().normalize())) {
                         throw new RuntimeException("Bad zip entry");
                     }
                     FileOutputStream os = new FileOutputStream(zipEntryFile); // ZipSlip
@@ -205,7 +205,7 @@ class ZipSlipTest : RewriteTest {
               public void m3(ZipEntry entry, File dir) throws Exception {
                 String name = entry.getName();
                 File file = new File(dir, name);
-                if (!file.toPath().normalize().startsWith(dir.toPath()))
+                if (!file.toPath().normalize().startsWith(dir.toPath().normalize()))
                   throw new Exception();
                 FileOutputStream os = new FileOutputStream(file); // OK
               }

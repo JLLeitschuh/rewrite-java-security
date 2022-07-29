@@ -185,7 +185,7 @@ public class ZipSlip extends Recipe {
         @AllArgsConstructor
         private static class TaintedFileOrPathVisitor<P> extends JavaVisitor<P> {
             private final JavaTemplate noZipSlipFileTemplate = JavaTemplate.builder(this::getCursor, "" +
-                            "if (!#{any(java.io.File)}.toPath().normalize().startsWith(#{any(java.io.File)}.toPath())) {\n" +
+                            "if (!#{any(java.io.File)}.toPath().normalize().startsWith(#{any(java.io.File)}.toPath().normalize())) {\n" +
                             "    throw new RuntimeException(\"Bad zip entry\");\n" +
                             "}")
                     .build();
@@ -196,7 +196,7 @@ public class ZipSlip extends Recipe {
                             "}")
                     .build();
             private final JavaTemplate noZipSlipPathStartsWithPathTemplate = JavaTemplate.builder(this::getCursor, "" +
-                    "if (!#{any(java.nio.file.Path)}.normalize().startsWith(#{any(java.nio.file.Path)})) {\n" +
+                    "if (!#{any(java.nio.file.Path)}.normalize().startsWith(#{any(java.nio.file.Path)}.normalize())) {\n" +
                     "    throw new RuntimeException(\"Bad zip entry\");\n" +
                     "}").build();
 

@@ -1,5 +1,6 @@
 package org.openrewrite.java.security.internal;
 
+import io.micrometer.core.lang.Nullable;
 import lombok.AccessLevel;
 import lombok.NoArgsConstructor;
 import org.openrewrite.java.tree.Expression;
@@ -10,7 +11,7 @@ import org.openrewrite.java.tree.TypeUtils;
 @NoArgsConstructor(access = AccessLevel.PRIVATE)
 public final class FileSeperatorUtil {
 
-    public static boolean isFileSeperatorExpression(Expression e) {
+    public static boolean isFileSeperatorExpression(@Nullable Expression e) {
         Expression expression = Expression.unwrap(e);
         if (expression instanceof J.FieldAccess || expression instanceof J.Identifier) {
             // CASE:
