@@ -518,7 +518,7 @@ class ZipSlipTest : RewriteTest {
                     while ((entry = zis.getNextEntry()) != null) {
                         File outputFile = new File(outputFolder.getCanonicalPath(), entry.getName());
                         if (!outputFile.toPath().normalize().startsWith(outputFolder.getCanonicalPath())) {
-                            throw new RuntimeException("Bad zip entry");
+                            throw new IOException("Bad zip entry");
                         }
                         File outputParent = new File(outputFile.getParent());
                         outputParent.mkdirs();
@@ -752,7 +752,7 @@ class ZipSlipTest : RewriteTest {
                                 in = zf.getInputStream(entry);
                                 final File zipEntryFile = new File(descDir, zipEntryName);
                                 if (!zipEntryFile.toPath().normalize().startsWith(descDir)) {
-                                    throw new RuntimeException("Bad zip entry");
+                                    throw new IOException("Bad zip entry");
                                 }
                                 out = new FileOutputStream(zipEntryFile);
                                 buf1 = new byte[1024];
@@ -1303,7 +1303,7 @@ class ZipSlipTest : RewriteTest {
                             }
                             final File zipEntryFile = new File(dir, zipEntry.getName());
                             if (!zipEntryFile.toPath().normalize().startsWith(dir.toPath().normalize())) {
-                                throw new RuntimeException("Bad zip entry");
+                                throw new IOException("Bad zip entry");
                             }
                             outputFile = zipEntryFile;
                             try (InputStream inputStream = zipFile.getInputStream(zipEntry);
@@ -1387,7 +1387,7 @@ class ZipSlipTest : RewriteTest {
                         for (; en.hasMoreElements(); entry = en.nextElement()) {
                             File imageFile = new File(workDir, entry.getName());
                             if (!imageFile.toPath().normalize().startsWith(workDir.toPath().normalize())) {
-                                throw new RuntimeException("Bad zip entry");
+                                throw new IOException("Bad zip entry");
                             }
                             // Standard un-zip...
                             OutputStream fos = new FileOutputStream(imageFile);

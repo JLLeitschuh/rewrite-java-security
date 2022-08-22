@@ -20,12 +20,8 @@ import org.openrewrite.java.security.internal.StringToFileConstructorVisitor;
 import org.openrewrite.java.tree.*;
 import org.openrewrite.marker.Markers;
 
-import java.lang.reflect.Type;
 import java.time.Duration;
-import java.util.HashSet;
-import java.util.List;
-import java.util.Optional;
-import java.util.Set;
+import java.util.*;
 import java.util.function.Function;
 import java.util.function.Supplier;
 
@@ -145,7 +141,9 @@ public class ZipSlip extends Recipe {
                 return zipEntryExpressions;
             })).orElseGet(HashSet::new);
         }
-    };
+    }
+
+    ;
 
     private static class ZipEntryToAnyLocalFlowSpec extends LocalFlowSpec<J.MethodInvocation, Expression> {
         @Override
@@ -196,21 +194,84 @@ public class ZipSlip extends Recipe {
         @AllArgsConstructor
         @EqualsAndHashCode(callSuper = false, onlyExplicitlyIncluded = true)
         private static class TaintedFileOrPathVisitor<P> extends JavaVisitor<P> {
-            private final JavaTemplate noZipSlipFileTemplate = JavaTemplate.builder(this::getCursor, "" +
-                            "if (!#{any(java.io.File)}.toPath().normalize().startsWith(#{any(java.io.File)}.toPath().normalize())) {\n" +
-                            "    throw new RuntimeException(\"Bad zip entry\");\n" +
-                            "}")
-                    .build();
+            private static final String IO_EXCEPTION_FQN = "java.io.IOException";
+            private static final JavaType IO_EXCEPTION = JavaType.buildType(IO_EXCEPTION_FQN);
+            private static final String RUNTIME_EXCEPTION_THROW_LINE = "    throw new RuntimeException(\"Bad zip entry\");\n";
+            private static final String IO_EXCEPTION_THROW_LINE = "    throw new IOException(\"Bad zip entry\");\n";
 
-            private final JavaTemplate noZipSlipFileWithStringTemplate = JavaTemplate.builder(this::getCursor, "" +
-                            "if (!#{any(java.io.File)}.toPath().normalize().startsWith(#{any(String)})) {\n" +
-                            "    throw new RuntimeException(\"Bad zip entry\");\n" +
-                            "}")
-                    .build();
-            private final JavaTemplate noZipSlipPathStartsWithPathTemplate = JavaTemplate.builder(this::getCursor, "" +
-                    "if (!#{any(java.nio.file.Path)}.normalize().startsWith(#{any(java.nio.file.Path)}.normalize())) {\n" +
-                    "    throw new RuntimeException(\"Bad zip entry\");\n" +
-                    "}").build();
+            private JavaTemplate noZipSlipFileTemplate() {
+                boolean canSupportIoException = canSupportIoException();
+                String exceptionLine = canSupportIoException ? IO_EXCEPTION_THROW_LINE : RUNTIME_EXCEPTION_THROW_LINE;
+                JavaTemplate.Builder noZipSlipFileTemplate = JavaTemplate.builder(this::getCursor, "" +
+                        "if (!#{any(java.io.File)}.toPath().normalize().startsWith(#{any(java.io.File)}.toPath().normalize())) {\n" +
+                        exceptionLine +
+                        "}");
+                if (canSupportIoException) {
+                    noZipSlipFileTemplate.imports(IO_EXCEPTION_FQN);
+                }
+                return noZipSlipFileTemplate.build();
+            }
+
+            private JavaTemplate noZipSlipFileWithStringTemplate() {
+                boolean canSupportIoException = canSupportIoException();
+                String exceptionLine = canSupportIoException ? IO_EXCEPTION_THROW_LINE : RUNTIME_EXCEPTION_THROW_LINE;
+                JavaTemplate.Builder noZipSlipFileWithStringTemplate = JavaTemplate.builder(this::getCursor, "" +
+                        "if (!#{any(java.io.File)}.toPath().normalize().startsWith(#{any(String)})) {\n" +
+                        exceptionLine +
+                        "}");
+                if (canSupportIoException) {
+                    noZipSlipFileWithStringTemplate.imports(IO_EXCEPTION_FQN);
+                }
+                return noZipSlipFileWithStringTemplate.build();
+            }
+
+            private JavaTemplate noZipSlipPathStartsWithPathTemplate() {
+                boolean canSupportIoException = canSupportIoException();
+                String exceptionLine = canSupportIoException ? IO_EXCEPTION_THROW_LINE : RUNTIME_EXCEPTION_THROW_LINE;
+                JavaTemplate.Builder noZipSlipPathStartsWithPathTemplate = JavaTemplate.builder(this::getCursor, "" +
+                        "if (!#{any(java.nio.file.Path)}.normalize().startsWith(#{any(java.nio.file.Path)}.normalize())) {\n" +
+                        exceptionLine +
+                        "}");
+                if (canSupportIoException) {
+                    noZipSlipPathStartsWithPathTemplate.imports(IO_EXCEPTION_FQN);
+                }
+                return noZipSlipPathStartsWithPathTemplate.build();
+            }
+
+            private boolean canSupportIoException() {
+                Iterator<Cursor> cursors =
+                        getCursor()
+                                .getPathAsCursors(
+                                        c -> isStaticOrInitBlockSafe(c) ||
+                                                c.getValue() instanceof J.MethodDeclaration ||
+                                                c.getValue() instanceof J.Try
+                                );
+                while (cursors.hasNext()) {
+                    Cursor cursor = cursors.next();
+                    if (isStaticOrInitBlockSafe(cursor)) {
+                        return false;
+                    } else if (cursor.getValue() instanceof J.Try) {
+                        J.Try tryBlock = cursor.getValue();
+                        if (tryBlock.getCatches().stream().anyMatch(catchClause ->
+                                catchClause.getParameter().getTree().getVariables().stream().anyMatch(v ->
+                                        TypeUtils.isAssignableTo(v.getType(), IO_EXCEPTION)))) {
+                            return true;
+                        }
+                    } else if (cursor.getValue() instanceof J.MethodDeclaration) {
+                        J.MethodDeclaration methodDeclaration = cursor.getValue();
+                        if (methodDeclaration.getThrows() != null &&
+                                methodDeclaration.getThrows().stream().anyMatch(throwsClause ->
+                                        TypeUtils.isAssignableTo(throwsClause.getType(), IO_EXCEPTION))) {
+                            return true;
+                        }
+                    }
+                }
+                return false;
+            }
+
+            private static boolean isStaticOrInitBlockSafe(Cursor cursor) {
+                return cursor.getValue() instanceof J.Block && J.Block.isStaticOrInitBlock(cursor);
+            }
 
             @EqualsAndHashCode.Include
             private final List<Expression> taintedSinks;
@@ -381,14 +442,14 @@ public class ZipSlip extends Recipe {
                     JavaTemplate template;
                     if (isTypeFile(zipSlipSimpleInjectGuardInfo.zipEntry.getType())) {
                         if (isTypeFile(zipSlipSimpleInjectGuardInfo.parentDir.getType())) {
-                            template = noZipSlipFileTemplate;
+                            template = noZipSlipFileTemplate();
                         } else {
                             assert TypeUtils.isString(zipSlipSimpleInjectGuardInfo.parentDir.getType());
-                            template = noZipSlipFileWithStringTemplate;
+                            template = noZipSlipFileWithStringTemplate();
                         }
                     } else {
                         assert isTypePath(zipSlipSimpleInjectGuardInfo.zipEntry.getType());
-                        template = noZipSlipPathStartsWithPathTemplate;
+                        template = noZipSlipPathStartsWithPathTemplate();
                     }
                     return b.withTemplate(
                             template,
